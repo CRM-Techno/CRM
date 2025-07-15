@@ -11,6 +11,9 @@ public class MongoDbContext
     {
         var client = new MongoClient(configuration.GetConnectionString("MongoDbConnection"));
         _database = client.GetDatabase("FinancialAgentDb");
+
+        // Verificar e criar coleções, se necessário
+        CreateCollectionsIfNotExist();
     }
 
     public IMongoCollection<FinancialRecord> FinancialRecords => 
@@ -18,4 +21,19 @@ public class MongoDbContext
     
     public IMongoCollection<DashboardData> DashboardData => 
         _database.GetCollection<DashboardData>("DashboardData");
+
+    private void CreateCollectionsIfNotExist()
+    {
+        var collectionNames = _database.ListCollectionNames().ToList();
+        
+        if (!collectionNames.Contains("FinancialRecords"))
+        {
+            _database.CreateCollection("FinancialRecords");
+        }
+        
+        if (!collectionNames.Contains("DashboardData"))
+        {
+            _database.CreateCollection("DashboardData");
+        }
+    }
 }

@@ -3,7 +3,6 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace FinancialAgent.Models;
 
-
 public class DashboardData
 {
     [BsonId]

@@ -1,55 +1,72 @@
 using FinancialAgent.Data;
 using FinancialAgent.Services;
+using Quartz;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
-
+// Add services to the container
 builder.Services.AddControllers();
 builder.Services.AddSingleton<MongoDbContext>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<AnomalyDetectionService>();
 builder.Services.AddScoped<EmailService>();
+builder.Services.AddSingleton<ReportSchedulerService>();
+builder.Services.AddSingleton<DataGenerator>();
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+// Configure Quartz.NET
+builder.Services.AddQuartz(q =>
+{
+    q.UseMicrosoftDependencyInjectionJobFactory();
+});
+builder.Services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
+// Add Swagger services
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo 
+    { 
+        Title = "Financial Agent API", 
+        Version = "v1",
+        Description = "API for generating financial reports and detecting anomalies"
+    });
+});
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", builder =>
+        builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Financial Agent API V1");
+        c.RoutePrefix = string.Empty; // Set Swagger UI at the root URL (e.g., http://localhost:5168/)
+    });
+    // Disable HTTPS redirection in development to avoid issues with Swagger
+    // app.UseHttpsRedirection(); // Comment out or remove for development
 }
 
-app.UseHttpsRedirection();
+app.UseCors("AllowAll");
+app.UseAuthorization();
+app.MapControllers();
 
-var summaries = new[]
+// Geração de dados de teste
+using (var scope = app.Services.CreateScope())
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    var dataGenerator = scope.ServiceProvider.GetRequiredService<DataGenerator>();
+    await dataGenerator.ClearTestDataAsync(); // Limpa dados antigos
+    await dataGenerator.GenerateTestDataAsync(1000); // Gera 1000 registros
+}
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+// Iniciar o agendador de relatórios
+var schedulerService = app.Services.GetRequiredService<ReportSchedulerService>();
+await schedulerService.StartAsync();
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
